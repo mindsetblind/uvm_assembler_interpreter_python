@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Результаты сборки и работы программ
+*.bin
+*.csv
+build/
+dist/
+
+# Редакторы и ОС
+.vscode/
+.idea/
+.DS_Store
+
+# Материалы задания
+*.pdf
