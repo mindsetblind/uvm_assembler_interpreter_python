@@ -25,6 +25,7 @@ class AssemblyError(Exception):
     """Ошибка разбора исходного текста программы."""
 
     def __init__(self, line_no, message):
+        """Сохраняет номер строки и формирует сообщение об ошибке."""
         super().__init__(f"строка {line_no}: {message}")
         self.line_no = line_no
 
@@ -47,7 +48,7 @@ class Instruction:
 
 def parse_number(text):
     """Преобразует десятичный или шестнадцатеричный литерал в число."""
-    return int(text, 0)
+    return int(text, 16) if text.lower().startswith("0x") else int(text)
 
 
 def normalize(line):
@@ -66,7 +67,10 @@ def parse_line(code, line_no):
         b = None
         if command.has_b:
             raw = match.group(1)
-            b = parse_number(raw) if raw is not None else 0
+            try:
+                b = parse_number(raw) if raw is not None else 0
+            except ValueError as err:
+                raise AssemblyError(line_no, "некорректное число") from err
             if b > command.b_max:
                 raise AssemblyError(
                     line_no,

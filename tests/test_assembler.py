@@ -41,6 +41,23 @@ class SpecTests(unittest.TestCase):
         program = parse_program("# comment\n\nmem[pop()] = pop() # w\n")
         self.assertEqual(program, [Instruction("write_mem", 62, None, 3)])
 
+    def test_decimal_leading_zeros(self):
+        """Десятичные литералы с ведущими нулями не считаются восьмеричными."""
+        self.assertEqual(parse_program("push(0439)")[0].b, 439)
+
+    def test_field_boundaries(self):
+        """Ноль и максимальные значения всех трёх полей B допустимы."""
+        cases = (
+            ("push({})", 67_108_863),
+            ("push(mem[pop() + {}])", 8191),
+            ("mem[{}] = pow(pop(), pop())", 2_147_483_647),
+        )
+        for template, maximum in cases:
+            for value in (0, maximum):
+                with self.subTest(template=template, value=value):
+                    program = parse_program(template.format(value))
+                    self.assertEqual(program[0].b, value)
+
 
 class ErrorTests(unittest.TestCase):
     """Проверка диагностики ошибок."""
@@ -52,9 +69,25 @@ class ErrorTests(unittest.TestCase):
         self.assertEqual(ctx.exception.line_no, 2)
 
     def test_field_overflow(self):
-        """Смещение чтения ограничено 13 битами."""
-        with self.assertRaises(AssemblyError):
-            parse_program("push(mem[pop() + 8192])")
+        """Каждое поле B отвергает значение выше своей верхней границы."""
+        for source in (
+            "push(67108864)",
+            "push(mem[pop() + 8192])",
+            "mem[2147483648] = pow(pop(), pop())",
+        ):
+            with self.subTest(source=source):
+                with self.assertRaises(AssemblyError):
+                    parse_program(source)
+
+    def test_negative_fields(self):
+        """Отрицательные значения не входят в язык ассемблера."""
+        for source in (
+            "push(-1)", "push(mem[pop() + -1])",
+            "mem[-1] = pow(pop(), pop())",
+        ):
+            with self.subTest(source=source):
+                with self.assertRaises(AssemblyError):
+                    parse_program(source)
 
 
 if __name__ == "__main__":
