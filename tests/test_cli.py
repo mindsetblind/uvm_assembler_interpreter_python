@@ -1,4 +1,4 @@
-"""Проверки CLI этапа 1 через реальный скрипт запуска."""
+"""Проверки CLI этапа 2 через реальный скрипт запуска."""
 
 import pathlib
 import subprocess
@@ -6,16 +6,20 @@ import tempfile
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-EXPECTED_IR = (
-    "load_const A=38, B=439\n"
-    "read_mem   A=63, B=201\n"
-    "write_mem  A=62\n"
-    "pow        A=14, B=782\n"
+EXPECTED_BYTES = bytes.fromhex(
+    "e6 6d 00 00 00 7f 32 00 00 00 3e 00 00 00 00 8e c3 00 00 00"
+)
+EXPECTED_OUTPUT = (
+    "Ассемблировано команд: 4\n"
+    "0xE6, 0x6D, 0x00, 0x00, 0x00\n"
+    "0x7F, 0x32, 0x00, 0x00, 0x00\n"
+    "0x3E, 0x00, 0x00, 0x00, 0x00\n"
+    "0x8E, 0xC3, 0x00, 0x00, 0x00\n"
 )
 
 
 class CliTests(unittest.TestCase):
-    """Контракт CLI: аргументы, IR и диагностика ошибок."""
+    """Контракт CLI: аргументы, бинарный файл и диагностика ошибок."""
 
     def setUp(self):
         """Создаёт отдельный каталог для каждого запуска."""
@@ -33,7 +37,7 @@ class CliTests(unittest.TestCase):
         )
 
     def test_specification_output(self):
-        """Тестовый режим выдаёт все поля из PDF в ожидаемом формате."""
+        """Оба тестовых флага выводят и записывают точные байты PDF."""
         for flag in ("--test", "-t"):
             with self.subTest(flag=flag):
                 result = self.run_cli(
@@ -41,17 +45,56 @@ class CliTests(unittest.TestCase):
                     flag,
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(result.stdout, EXPECTED_IR)
+                self.assertEqual(result.stdout, EXPECTED_OUTPUT)
                 self.assertEqual(result.stderr, "")
-                self.assertFalse(self.output.exists())
+                self.assertEqual(self.output.read_bytes(), EXPECTED_BYTES)
 
     def test_normal_mode(self):
-        """Без флага ассемблер проверяет исходник без генерации бинарника."""
+        """Без тестового флага создаётся бинарник и выводится число команд."""
         result = self.run_cli(
             "asm", ROOT / "programs/spec_tests.asm", self.output,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "Ассемблировано команд: 4\n")
+        self.assertEqual(self.output.read_bytes(), EXPECTED_BYTES)
+
+    def test_empty_program(self):
+        """Пустая программа даёт пустой файл и ноль команд."""
+        source = self.directory / "empty.asm"
+        source.write_text("# Только комментарий\n", encoding="utf-8")
+        result = self.run_cli("asm", source, self.output, "--test")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "Ассемблировано команд: 0\n")
+        self.assertEqual(self.output.read_bytes(), b"")
+
+    def test_output_error(self):
+        """Ошибка пути результата не выдаётся за успешную сборку."""
+        output = self.directory / "missing" / "out.bin"
+        result = self.run_cli(
+            "asm", ROOT / "programs/spec_tests.asm", output, "--test",
+        )
+        self.assertEqual(result.returncode, 1)
         self.assertEqual(result.stdout, "")
+        self.assertIn("Ошибка:", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_invalid_source_preserves_output(self):
+        """Ошибка исходника не повреждает ранее собранный бинарник."""
+        self.output.write_bytes(EXPECTED_BYTES)
+        source = self.directory / "invalid.asm"
+        source.write_text("foo()", encoding="utf-8")
+        result = self.run_cli("asm", source, self.output)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(self.output.read_bytes(), EXPECTED_BYTES)
+
+    def test_invalid_encoding(self):
+        """Не-UTF-8 исходник даёт диагностическое сообщение."""
+        source = self.directory / "invalid.asm"
+        source.write_bytes(b"\xff\xfe")
+        result = self.run_cli("asm", source, self.output)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Ошибка:", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
         self.assertFalse(self.output.exists())
 
     def test_missing_source(self):

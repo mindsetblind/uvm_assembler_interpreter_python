@@ -1,4 +1,4 @@
-"""Ассемблер УВМ: разбор текста программы во внутреннее представление.
+"""Ассемблер УВМ: перевод текста программы в машинный код.
 
 Внутреннее представление программы -- список объектов Instruction,
 каждый из которых хранит имя команды и значения полей A и B.
@@ -97,6 +97,27 @@ def format_ir(program):
     )
 
 
+def encode_instruction(instruction):
+    """Кодирует проверенную команду IR в пять байт little-endian."""
+    operand = instruction.b if instruction.b is not None else 0
+    word = instruction.a | (operand << spec.B_SHIFT)
+    return word.to_bytes(spec.COMMAND_SIZE, byteorder="little")
+
+
+def encode_program(program):
+    """Собирает машинный код из проверенного списка команд IR."""
+    return b"".join(encode_instruction(instr) for instr in program)
+
+
+def format_bytes(data):
+    """Форматирует машинный код: одна строка байтов на команду."""
+    size = spec.COMMAND_SIZE
+    return "\n".join(
+        ", ".join(f"0x{byte:02X}" for byte in data[start:start + size])
+        for start in range(0, len(data), size)
+    )
+
+
 def build_arg_parser():
     """Создаёт парсер аргументов командной строки ассемблера."""
     parser = argparse.ArgumentParser(description="Ассемблер УВМ")
@@ -104,7 +125,7 @@ def build_arg_parser():
     parser.add_argument("output", help="путь к двоичному файлу-результату")
     parser.add_argument(
         "-t", "--test", action="store_true",
-        help="режим тестирования: вывести внутреннее представление",
+        help="режим тестирования: вывести байты машинного кода",
     )
     return parser
 
@@ -115,11 +136,15 @@ def main(argv=None):
     try:
         with open(args.source, encoding="utf-8") as src:
             program = parse_program(src.read())
-    except (OSError, AssemblyError) as err:
+        data = encode_program(program)
+        with open(args.output, "wb") as output:
+            output.write(data)
+    except (OSError, UnicodeError, AssemblyError) as err:
         print(f"Ошибка: {err}", file=sys.stderr)
         return 1
-    if args.test:
-        print(format_ir(program))
+    print(f"Ассемблировано команд: {len(program)}")
+    if args.test and data:
+        print(format_bytes(data))
     return 0
 
 
