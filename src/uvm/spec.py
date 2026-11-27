@@ -27,7 +27,7 @@ class CommandSpec:
     @property
     def has_b(self):
         """Возвращает True, если у команды есть поле B."""
-        return self.b_bits > 0
+        return bool(self.b_bits)
 
     @property
     def b_max(self):
